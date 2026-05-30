@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<meta charset="UTF-8">
+<title>国际象棋教练</title>
+<link rel="stylesheet"
+  href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<style>
+  body { font-family: sans-serif; display: flex; gap: 32px; padding: 32px; background: #1a1a2e; color: #eee; }
+  #board-wrap { flex-shrink: 0; }
+  #board { width: 480px; }
+  #panel { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+  #status { font-size: 18px; font-weight: bold; color: #a8d8a8; }
+  #last-move { font-size: 14px; color: #aaa; }
+  button {
+    padding: 10px 20px; font-size: 15px; border: none; border-radius: 8px;
+    cursor: pointer; font-weight: bold;
+  }
+  #btn-analyze { background: #4a90d9; color: white; }
+  #btn-analyze:hover { background: #357abd; }
+  #btn-reset { background: #555; color: white; }
+  #btn-reset:hover { background: #333; }
+  #analysis-box {
+    background: #16213e; border-radius: 10px; padding: 16px;
+    min-height: 120px; font-size: 14px; line-height: 1.7; color: #ddd;
+    white-space: pre-wrap;
+  }
+  #loading { color: #aaa; font-style: italic; display: none; }
+  .highlight-square::after {
+  content: "";
+  display: block;
+  width: 30%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  margin: 35% auto;
+  }
+</style>
+</head>
+<body>
+
+<div id="board-wrap">
+  <div id="board"></div>
+</div>
+
+<div id="panel">
+  <div id="status">白方行棋</div>
+  <div id="last-move">上一步：—</div>
+  <button id="btn-analyze">🎓 教练分析</button>
+  <div id="loading">教练思考中...</div>
+  <div id="analysis-box">点击「教练分析」获取建议</div>
+  <button id="btn-reset">重新开始</button>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+  var game = new Chess()
+  function removeHighlights() {
+  $(".square-55d63").removeClass("highlight-square")
+  }
+
+  function highlightMoves(square) {
+  removeHighlights()
+  var moves = game.moves({ square: square, verbose: true })
+  if (moves.length === 0) return
+  moves.forEach(function(move) {
+    $(".square-" + move.to).addClass("highlight-square")
+  })
+  }
+
+  var lastMove = ""
+
+  var board = Chessboard("board", {
+    draggable: true,
+    position: "start",
+    onDragStart: onDragStart,
+    onDrop: onDrop,
+    onSnapEnd: onSnapEnd,
+    pieceTheme: "https://lichess1.org/assets/piece/cburnett/{piece}.svg"
+  })
+
+  function onDragStart(source, piece) {
+    if (game.game_over()) return false
+    if ((game.turn() === "w" && piece.search(/^b/) !== -1) ||
+        (game.turn() === "b" && piece.search(/^w/) !== -1)) return false
+    highlightMoves(source)
+  }
+
+  function onDrop(source, target) {
+    removeHighlights()
+    var move = game.move({ from: source, to: target, promotion: "q" })
+    if (move === null) return "snapback"
+    lastMove = source + target
+    $.post("/move", JSON.stringify({ move: lastMove }), function(data) {
+      if (data.success) {
+        updateStatus()
+      }
+    }, "json")
+  }
+
+  function onSnapEnd() {
+    board.position(game.fen())
+  }
+
+  function updateStatus() {
+    var turn = game.turn() === "w" ? "白方" : "黑方"
+    if (game.game_over()) {
+      $("#status").text("游戏结束！")
+    } else {
+      $("#status").text(turn + "行棋")
+    }
+    $("#last-move").text("上一步：" + lastMove)
+  }
+
+  $("#btn-analyze").click(function() {
+    $("#loading").show()
+    $("#analysis-box").text("")
+    $.post("/analyze", JSON.stringify({
+      fen: game.fen(),
+      last_move: lastMove,
+      turn: game.turn() === "w" ? "white" : "black"
+    }), function(data) {
+      $("#loading").hide()
+      $("#analysis-box").html(marked.parse(data.analysis || data.error))
+    }, "json")
+  })
+
+  $("#btn-reset").click(function() {
+    $.post("/reset", function(data) {
+      game.reset()
+      board.start()
+      lastMove = ""
+      $("#status").text("白方行棋")
+      $("#last-move").text("上一步：—")
+      $("#analysis-box").text("点击「教练分析」获取建议")
+    }, "json")
+  })
+</script>
+</body>
+</html>
