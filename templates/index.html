@@ -104,37 +104,41 @@
     </div>
   </div>
 
-  <div class="card">
-    <h2>单人模式</h2>
-    <button class="btn-blue" id="btn-solo">自己对自己练习</button>
+  <div style="display:flex;gap:16px;width:100%;max-width:760px">
+    <div class="card" style="flex:1">
+      <h2>单人模式</h2>
+      <button class="btn-blue" id="btn-solo">Solo Mode</button>
+    </div>
+    <div class="card" style="flex:1">
+      <h2>FEN 局面分析</h2>
+      <input type="text" id="fen-input" placeholder="粘贴 FEN 字符串">
+      <button class="btn-blue" id="btn-fen-analyze">分析局面</button>
+      <div id="fen-result" style="font-size:13px;color:#aaa;line-height:1.6;display:none"></div>
+    </div>
   </div>
   
-  <div class="card">
-    <h2>FEN 局面分析</h2>
-    <input type="text" id="fen-input" placeholder="粘贴 FEN 字符串">
-    <button class="btn-blue" id="btn-fen-analyze">分析局面</button>
-    <div id="fen-result" style="font-size:13px;color:var(--color-text-secondary);line-height:1.6;display:none"></div>
-  </div>
-
-  <div class="card">
-    <h2>创建房间</h2>
-    <div style="display:flex;gap:8px">
-      <button class="preset-btn active" id="color-random" style="flex:1">随机</button>
-      <button class="preset-btn" id="color-white" style="flex:1">♔ 白方</button>
-      <button class="preset-btn" id="color-black" style="flex:1">♚ 黑方</button>
+  <div style="display:flex;gap:16px;width:100%;max-width:760px">
+    <div class="card" style="flex:1">
+      <h2>创建房间</h2>
+      <div style="display:flex;gap:8px">
+        <button class="preset-btn active" id="color-random" style="flex:1">随机</button>
+        <button class="preset-btn" id="color-white" style="flex:1">♔ 白方</button>
+        <button class="preset-btn" id="color-black" style="flex:1">♚ 黑方</button>
+      </div>
+      <button class="btn-blue" id="btn-create">创建新房间</button>
     </div>
-    <button class="btn-blue" id="btn-create">创建新房间</button>
+    <div class="card" style="flex:1">
+      <h2>加入房间</h2>
+      <input type="text" id="room-input" placeholder="输入房间码" maxlength="6" style="text-transform:uppercase">
+      <button class="btn-orange" id="btn-join">加入</button>
+    </div>
   </div>
-
-  <div class="card">
-    <h2>加入房间</h2>
-    <input type="text" id="room-input" placeholder="输入房间码" maxlength="6" style="text-transform:uppercase">
-    <button class="btn-orange" id="btn-join">加入</button>
-  </div>
-
-  <div class="card">
-    <h2>快速匹配</h2>
-    <button class="btn-green" id="btn-quick">快速匹配对手</button>
+  
+  <div style="width:100%;max-width:760px">
+    <div class="card">
+      <h2>快速匹配</h2>
+      <button class="btn-green" id="btn-quick">快速匹配对手</button>
+    </div>
   </div>
 
   <div id="lobby-msg"></div>
@@ -346,6 +350,7 @@ $("#btn-solo").click(() => {
         pieceTheme: "https://lichess1.org/assets/piece/cburnett/{piece}.svg",
         onDragStart: (source, piece) => {
             if (game.game_over()) return false
+            highlightMoves(source)
             return true
         },
         onDrop: (source, target) => {
@@ -479,11 +484,23 @@ $("#btn-fen-analyze").click(async () => {
     else $("#lobby-msg").text(data.msg)
   })
 
-  $("#btn-analyze").click(() => {
+  $("#btn-analyze").click(async () => {
     $("#loading").show()
     $("#analysis-box").html("")
-    socket.emit("analyze", { room: roomCode })
-  })
+    
+    if (roomCode === "SOLO") {
+        const response = await fetch("/analyze_fen", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fen: game.fen() })
+        })
+        const data = await response.json()
+        $("#loading").hide()
+        $("#analysis-box").html(marked.parse(data.analysis))
+    } else {
+        socket.emit("analyze", { room: roomCode })
+    }
+})
 
   socket.on("analysis", data => {
     $("#loading").hide()
