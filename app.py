@@ -1,76 +1,69 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit, join_room
 from openai import OpenAI
 import chess
+import random
+import string
 from config import VOLC_API_KEY
+import threading
+import time
+from flask import jsonify
 
 app = Flask(__name__)
-board = chess.Board()
+app.secret_key = "chess_coach_secret"
+socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=60, ping_interval=25)
 
 client = OpenAI(
     api_key=VOLC_API_KEY,
     base_url="https://ark.cn-beijing.volces.com/api/v3"
 )
 
+rooms = {}
+waiting_queue = []
+
 SYSTEM_PROMPT = """你是一个国际象棋教练，专门辅导有基本规则基础的入门新手。
 
 你的风格：
+- 分析局面时优先依据 FEN 字符串，FEN 是最准确的棋局表示
 - 用简单易懂的语言，避免专业术语，必须用术语时要解释
-- 重点解释"为什么"，而不只是"应该怎么走"
-- 鼓励性的语气，不批评，只引导
+- 诚实评价，走得好就夸，走得差就直接指出问题所在
+- 语气温和但不回避问题，帮助新手真正理解错误
 - 每次分析控制在200字以内
 
 分析时覆盖三点：
 1. 上一步走法的评价
 2. 当前局面最需要注意的一件事
-3. 建议下一步怎么想"""
+3. 建议下一步怎么想
+
+如果当前局面或走法涉及经典开局、战术或策略（如西西里防御、意大利开局、叉击、钉子战术等），在分析末尾单独一行标注：
+💡 涉及策略：[策略名称]（可自行搜索了解）
+没有经典策略则不写这行。
+
+"""
+
+
+def make_room_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
-
-@app.route("/move", methods=["POST"])
-def move():
+@app.route("/analyze_fen", methods=["POST"])
+def analyze_fen():
     data = request.get_json(force=True)
-    uci = data.get("move")
+    fen = data.get("fen", "")
     try:
-        m = chess.Move.from_uci(uci)
-        if m in board.legal_moves:
-            board.push(m)
-            return jsonify({
-                "success": True,
-                "fen": board.fen(),
-                "turn": "white" if board.turn == chess.WHITE else "black",
-                "game_over": board.is_game_over(),
-                "last_move": uci
-            })
-        else:
-            return jsonify({"success": False, "error": "非法走法"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-
-@app.route("/analyze", methods=["POST"])
-def analyze():
-    data = request.get_json(force=True)
-    fen = data.get("fen")
-    last_move = data.get("last_move", "")
-    turn = data.get("turn", "")
-
-    try:
-        b = chess.Board(fen)
-        board_desc = str(b)
+        board = chess.Board(fen)
     except Exception:
-        return jsonify({"error": "FEN 错误"})
-
-    prompt = f"""当前棋局（FEN）：{fen}
-棋盘状态：
-{board_desc}
-上一步走法：{last_move}
-现在轮到：{"白方" if turn == "white" else "黑方"}行棋
-请分析这个局面。"""
-
+        return jsonify({"error": "FEN 格式有误"})
+    
+    turn = "白方" if board.turn == chess.WHITE else "黑方"
+    prompt = f"""当前棋局 FEN：{fen}
+现在轮到：{turn}行棋
+请分析这个局面，给出当前形势评估和建议。"""
+    
     response = client.chat.completions.create(
         model="doubao-seed-1-8-251228",
         max_tokens=1000,
@@ -82,11 +75,245 @@ def analyze():
     return jsonify({"analysis": response.choices[0].message.content})
 
 
-@app.route("/reset", methods=["POST"])
-def reset():
-    board.reset()
-    return jsonify({"fen": board.fen()})
+@socketio.on("create_room")
+def on_create_room(data):
+    code = make_room_code()
+    color_pref = data.get("color", "random")
+    if color_pref == "random":
+        my_color = random.choice(["white", "black"])
+    else:
+        my_color = color_pref
+    time_ctrl = data.get("time_control", {"minutes": 0, "increment": 0})
+    minutes = time_ctrl.get("minutes") or 0
+    increment = time_ctrl.get("increment") or 0
+    rooms[code] = {
+        "turn_start": None,
+        "board": chess.Board(),
+        "players": {request.sid: my_color},
+        "creator_color": my_color,
+        "last_move": "",
+        "history": [],
+        "minutes": minutes,
+        "increment": increment,
+        "clocks": {
+            "white": minutes * 60,
+            "black": minutes * 60
+        },
+        "unlimited": minutes == 0
+    }
+    join_room(code)
+    emit("room_created", {"code": code, "color": my_color})
+
+
+@socketio.on("join_room_code")
+def on_join_room(data):
+    code = data.get("code", "").upper()
+    if code not in rooms:
+        emit("error", {"msg": "房间不存在"})
+        return
+    room = rooms[code]
+
+    # 有断线记录，允许重连
+    if "disconnected" in room:
+        old_sid = room["disconnected"]
+        old_color = room["players"].get(old_sid)
+        del room["players"][old_sid]
+        del room["disconnected"]
+        room["players"][request.sid] = old_color
+        join_room(code)
+        emit("joined_room", {"code": code, "color": old_color})
+        emit("game_start", {
+            "fen": room["board"].fen(),
+            "unlimited": room["unlimited"],
+            "white_time": room["clocks"]["white"],
+            "black_time": room["clocks"]["black"],
+            "increment": room["increment"]
+        }, to=code)
+        return
+
+    if len(room["players"]) >= 2:
+        emit("error", {"msg": "房间已满"})
+        return
+
+    creator_color = room["players"][list(room["players"].keys())[0]]
+    joiner_color = "black" if creator_color == "white" else "white"
+    room["players"][request.sid] = joiner_color
+    join_room(code)
+    emit("joined_room", {"code": code, "color": joiner_color})
+    room["turn_start"] = time.time()
+    emit("game_start", {
+        "fen": room["board"].fen(),
+        "unlimited": room["unlimited"],
+        "white_time": room["clocks"]["white"],
+        "black_time": room["clocks"]["black"],
+        "increment": room["increment"]
+    }, to=code)
+
+
+@socketio.on("quick_match")
+def on_quick_match(data):
+    time_ctrl = data.get("time_control", {"minutes": 0, "increment": 0})
+    if waiting_queue:
+        other_sid, _ = waiting_queue.pop(0)
+        code = make_room_code()
+        minutes = time_ctrl.get("minutes", 0)
+        increment = time_ctrl.get("increment", 0)
+        rooms[code] = {
+            "turn_start": None,
+            "board": chess.Board(),
+            "players": {other_sid: "white", request.sid: "black"},
+            "last_move": "",
+            "history": [],
+            "minutes": minutes,
+            "increment": increment,
+            "clocks": {"white": minutes * 60, "black": minutes * 60},
+            "unlimited": minutes == 0
+        }
+        join_room(code)
+        socketio.server.enter_room(other_sid, code)
+        emit("matched", {"code": code, "color": "black"})
+        emit("matched", {"code": code, "color": "white"}, to=other_sid)
+        emit("game_start", {
+            "fen": rooms[code]["board"].fen(),
+            "unlimited": rooms[code]["unlimited"],
+            "white_time": rooms[code]["clocks"]["white"],
+            "black_time": rooms[code]["clocks"]["black"],
+            "increment": rooms[code]["increment"]
+        }, to=code)
+    else:
+        waiting_queue.append((request.sid, time_ctrl))
+        emit("waiting", {})
+
+
+@socketio.on("make_move")
+def on_move(data):
+    code = data.get("room")
+    uci = data.get("move")
+    if code not in rooms:
+        return
+    room = rooms[code]
+    board = room["board"]
+    color = room["players"].get(request.sid)
+    turn = "white" if board.turn == chess.WHITE else "black"
+    if color != turn:
+        emit("error", {"msg": "还没轮到你"})
+        return
+    try:
+        move = chess.Move.from_uci(uci)
+        if move in board.legal_moves:
+            if not room["unlimited"]:
+                now = time.time()
+                elapsed = now - (room["turn_start"] or now)
+                room["clocks"][color] -= elapsed
+                room["clocks"][color] += room["increment"]
+                room["turn_start"] = now
+                if room["clocks"][color] <= 0:
+                    room["clocks"][color] = 0
+                    emit("timeout", {"loser": color}, to=code)
+                    del rooms[code]
+                    return
+            board.push(move)
+            room["history"].append(uci)
+            room["last_move"] = uci
+            emit("move_made", {
+                "fen": board.fen(),
+                "move": uci,
+                "game_over": board.is_game_over(),
+                "white_time": room["clocks"]["white"],
+                "black_time": room["clocks"]["black"],
+                "server_time": time.time()
+            }, to=code)
+        else:
+            emit("error", {"msg": "非法走法"})
+    except Exception as e:
+        emit("error", {"msg": str(e)})
+
+
+@socketio.on("timeout")
+def on_timeout(data):
+    code = data.get("room")
+    color = data.get("color")
+    if code in rooms:
+        emit("timeout", {"loser": color}, to=code)
+        del rooms[code]
+
+
+@socketio.on("analyze")
+def on_analyze(data):
+    code = data.get("room")
+    if code not in rooms:
+        return
+    room = rooms[code]
+    board = room["board"]
+    fen = board.fen()
+    last_move = room["last_move"]
+    board_desc = str(board)
+
+    history_str = " → ".join(room["history"]) if room["history"] else "无"
+    current_turn = "白方" if board.turn == chess.WHITE else "黑方"
+    last_turn = "黑方" if board.turn == chess.WHITE else "白方"
+    requester_color = room["players"].get(request.sid)
+    requester = "白方" if requester_color == "white" else "黑方"
+
+    prompt = f"""当前棋局（FEN）：{fen}
+完整走法历史（UCI格式）：{history_str}
+上一步走法：{last_move}（{last_turn}走的）
+现在轮到：{current_turn}行棋
+请求分析的玩家是：{requester}
+请站在{requester}的角度给出分析和建议。"""
+    response = client.chat.completions.create(
+        model="doubao-seed-1-8-251228",
+        max_tokens=1000,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    emit("analysis", {"text": response.choices[0].message.content},
+         to=request.sid)
+
+
+import threading
+
+@socketio.on("disconnect")
+def on_disconnect():
+    if any(sid == request.sid for sid, _ in waiting_queue):
+        waiting_queue[:] = [(s, t) for s, t in waiting_queue if s != request.sid]
+
+    for code, room in list(rooms.items()):
+        if request.sid in room["players"]:
+            room["disconnected"] = request.sid
+            socketio.emit("opponent_disconnected", {
+                "msg": "对手已断线，等待重连..."
+            }, to=code, namespace="/")
+            break
+
+
+@socketio.on("reconnect_room")
+def on_reconnect_room(data):
+    code = data.get("code")
+    color = data.get("color")
+    if code not in rooms:
+        emit("error", {"msg": "房间已关闭"})
+        return
+    room = rooms[code]
+    
+    # 找到断线的旧 sid 并替换
+    old_sid = room.get("disconnected")
+    if old_sid and old_sid in room["players"]:
+        del room["players"][old_sid]
+    
+    room["players"][request.sid] = color
+    if "disconnected" in room:
+        del room["disconnected"]
+    join_room(code)
+    emit("reconnected", {
+        "fen": room["board"].fen(),
+        "white_time": room["clocks"]["white"],
+        "black_time": room["clocks"]["black"],
+        "unlimited": room["unlimited"]
+    })
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    socketio.run(app, debug=True)

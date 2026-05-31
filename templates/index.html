@@ -1,142 +1,511 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <meta charset="UTF-8">
-<title>国际象棋教练</title>
-<link rel="stylesheet"
-  href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<title>Chess Coach</title>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
 <style>
-  body { font-family: sans-serif; display: flex; gap: 32px; padding: 32px; background: #1a1a2e; color: #eee; }
-  #board-wrap { flex-shrink: 0; }
-  #board { width: 480px; }
-  #panel { flex: 1; display: flex; flex-direction: column; gap: 16px; }
-  #status { font-size: 18px; font-weight: bold; color: #a8d8a8; }
-  #last-move { font-size: 14px; color: #aaa; }
-  button {
-    padding: 10px 20px; font-size: 15px; border: none; border-radius: 8px;
-    cursor: pointer; font-weight: bold;
+  * { box-sizing: border-box; }
+  body { font-family: sans-serif; background: #1a1a2e; color: #eee; margin: 0; }
+
+  #lobby {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh; gap: 20px; padding: 32px;
   }
-  #btn-analyze { background: #4a90d9; color: white; }
-  #btn-analyze:hover { background: #357abd; }
-  #btn-reset { background: #555; color: white; }
-  #btn-reset:hover { background: #333; }
+  h1 { font-size: 32px; margin: 0; }
+  .subtitle { color: #aaa; margin: 0; }
+  .card {
+    background: #16213e; border-radius: 12px; padding: 20px;
+    width: 360px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 15px; color: #a8d8a8; }
+  input[type=text], input[type=number] {
+    padding: 9px; font-size: 14px; border-radius: 8px;
+    border: 1px solid #444; background: #0f3460; color: #eee; width: 100%;
+  }
+  #lobby-msg { color: #aaa; font-size: 14px; text-align: center; min-height: 20px; }
+
+  .time-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+  .preset-btn {
+    padding: 6px 12px; font-size: 13px; border: 1px solid #444;
+    border-radius: 8px; cursor: pointer; background: #0f3460; color: #eee;
+    font-weight: normal; width: auto;
+  }
+  .preset-btn.active { background: #4a90d9; border-color: #4a90d9; }
+  .custom-time { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #aaa; }
+  .custom-time input { width: 70px; }
+
+  #game { display: none; flex-direction: row; gap: 24px; padding: 24px; align-items: flex-start; }
+  #board { width: 480px; flex-shrink: 0; }
+  #panel { flex: 1; display: flex; flex-direction: column; gap: 14px; min-width: 220px; }
+  #status { font-size: 17px; font-weight: bold; color: #a8d8a8; }
+  #room-info { font-size: 13px; color: #aaa; }
+  #last-move { font-size: 13px; color: #aaa; }
+
+  .clock-row { display: flex; justify-content: space-between; gap: 10px; }
+  .clock-box {
+    flex: 1; background: #16213e; border-radius: 10px; padding: 10px;
+    text-align: center;
+  }
+  .clock-label { font-size: 11px; color: #aaa; margin-bottom: 4px; }
+  .clock-time { font-size: 22px; font-weight: bold; font-family: monospace; }
+  .clock-box.active .clock-time { color: #a8d8a8; }
+  .clock-box.low .clock-time { color: #e07b3a; }
+
   #analysis-box {
-    background: #16213e; border-radius: 10px; padding: 16px;
-    min-height: 120px; font-size: 14px; line-height: 1.7; color: #ddd;
-    white-space: pre-wrap;
+    background: #16213e; border-radius: 10px; padding: 14px;
+    min-height: 100px; font-size: 13px; line-height: 1.7; color: #ddd;
   }
-  #loading { color: #aaa; font-style: italic; display: none; }
+  #loading { color: #aaa; font-style: italic; display: none; font-size: 13px; }
   .highlight-square::after {
-  content: "";
-  display: block;
-  width: 30%;
-  height: 30%;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.25);
-  margin: 35% auto;
+    content: ""; display: block; width: 30%; height: 30%;
+    border-radius: 50%; background: rgba(0,0,0,0.25); margin: 35% auto;
   }
+
+  button {
+    padding: 10px 16px; font-size: 14px; border: none;
+    border-radius: 8px; cursor: pointer; font-weight: bold;
+  }
+  .btn-blue { background: #4a90d9; color: white; width: 100%; }
+  .btn-blue:hover { background: #357abd; }
+  .btn-green { background: #5a9e6f; color: white; width: 100%; }
+  .btn-green:hover { background: #3d7a52; }
+  .btn-orange { background: #e07b3a; color: white; width: 100%; }
+  .btn-orange:hover { background: #b85e25; }
+  .btn-gray { background: #555; color: white; width: 100%; }
+  .btn-gray:hover { background: #333; }
 </style>
 </head>
 <body>
 
-<div id="board-wrap">
-  <div id="board"></div>
+<div id="lobby">
+  <h1>♟️ Chess Coach</h1>
+  <p class="subtitle">国际象棋 AI 教练</p>
+
+  <div class="card" style="display:none">
+    <h2>时间控制</h2>
+    <div class="time-presets">
+        <button class="preset-btn active" data-min="0" data-inc="0">无限制</button>
+        <button class="preset-btn" data-min="1" data-inc="0">子弹 · 1分钟</button>
+        <button class="preset-btn" data-min="2" data-inc="0">子弹 · 2分钟</button>
+        <button class="preset-btn" data-min="3" data-inc="2">闪电 · 3分钟+2秒/步</button>
+        <button class="preset-btn" data-min="5" data-inc="0">闪电 · 5分钟</button>
+        <button class="preset-btn" data-min="10" data-inc="0">快棋 · 10分钟</button>
+        <button class="preset-btn" data-min="15" data-inc="10">快棋 · 15分钟+10秒/步</button>
+        <button class="preset-btn" data-min="30" data-inc="0">慢棋 · 30分钟</button>
+        <button class="preset-btn" data-min="-1" data-inc="-1">自定义</button>
+    </div>
+    <div class="custom-time" id="custom-row" style="display:none">
+      <span>时间</span>
+      <input type="number" id="custom-min" min="1" max="180" value="10" placeholder="分钟">
+      <span>分钟 +</span>
+      <input type="number" id="custom-inc" min="0" max="60" value="0" placeholder="秒">
+      <span>秒/步</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>单人模式</h2>
+    <button class="btn-blue" id="btn-solo">自己对自己练习</button>
+  </div>
+  
+  <div class="card">
+    <h2>FEN 局面分析</h2>
+    <input type="text" id="fen-input" placeholder="粘贴 FEN 字符串">
+    <button class="btn-blue" id="btn-fen-analyze">分析局面</button>
+    <div id="fen-result" style="font-size:13px;color:var(--color-text-secondary);line-height:1.6;display:none"></div>
+  </div>
+
+  <div class="card">
+    <h2>创建房间</h2>
+    <div style="display:flex;gap:8px">
+      <button class="preset-btn active" id="color-random" style="flex:1">随机</button>
+      <button class="preset-btn" id="color-white" style="flex:1">♔ 白方</button>
+      <button class="preset-btn" id="color-black" style="flex:1">♚ 黑方</button>
+    </div>
+    <button class="btn-blue" id="btn-create">创建新房间</button>
+  </div>
+
+  <div class="card">
+    <h2>加入房间</h2>
+    <input type="text" id="room-input" placeholder="输入房间码" maxlength="6" style="text-transform:uppercase">
+    <button class="btn-orange" id="btn-join">加入</button>
+  </div>
+
+  <div class="card">
+    <h2>快速匹配</h2>
+    <button class="btn-green" id="btn-quick">快速匹配对手</button>
+  </div>
+
+  <div id="lobby-msg"></div>
 </div>
 
-<div id="panel">
-  <div id="status">白方行棋</div>
-  <div id="last-move">上一步：—</div>
-  <button id="btn-analyze">🎓 教练分析</button>
-  <div id="loading">教练思考中...</div>
-  <div id="analysis-box">点击「教练分析」获取建议</div>
-  <button id="btn-reset">重新开始</button>
+<div id="game">
+  <div><div id="board"></div></div>
+  <div id="panel">
+    <div id="room-info">房间码：<strong id="room-code"></strong> · 你是 <strong id="my-color"></strong></div>
+    <div id="status">等待对手加入...</div>
+    <div class="clock-row" id="clock-row" style="display:none">
+      <div class="clock-box" id="clock-black">
+        <div class="clock-label">黑方</div>
+        <div class="clock-time" id="time-black">--:--</div>
+      </div>
+      <div class="clock-box" id="clock-white">
+        <div class="clock-label">白方</div>
+        <div class="clock-time" id="time-white">--:--</div>
+      </div>
+    </div>
+    <div id="last-move">上一步：—</div>
+    <button class="btn-blue" id="btn-analyze">🎓 教练分析</button>
+    <div id="loading">教练思考中...</div>
+    <div id="analysis-box">点击「教练分析」获取建议</div>
+    <button class="btn-gray" id="btn-home">返回首页</button>
+  </div>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-  var game = new Chess()
+  const socket = io()
+  const savedCode = sessionStorage.getItem("roomCode")
+  const savedColor = sessionStorage.getItem("myColor")
+  if (savedCode && savedColor) {
+      socket.emit("reconnect_room", { code: savedCode, color: savedColor })
+  }
+  const game = new Chess()
+  let myColor = "white"
+  let roomCode = ""
+  let lastMove = ""
+  let gameStarted = false
+  let board = null
+  let unlimited = true
+  let increment = 0
+  let clocks = { white: 0, black: 0 }
+  let clockInterval = null
+  let moveStartTime = null
+
+  // 时制预设
+  let selectedColor = "random"
+  $("#color-random, #color-white, #color-black").click(function() {
+    $("#color-random, #color-white, #color-black").removeClass("active")
+    $(this).addClass("active")
+    selectedColor = $(this).attr("id").replace("color-", "")
+  })
+  let selectedMin = 0, selectedInc = 0
+  $(".time-presets .preset-btn").click(function() {
+    $(".time-presets .preset-btn").removeClass("active")
+    $(this).addClass("active")
+    selectedMin = parseInt($(this).data("min"))
+    selectedInc = parseInt($(this).data("inc"))
+    if (selectedMin === -1) {
+      $("#custom-row").show()
+    } else {
+      $("#custom-row").hide()
+    }
+  })
+
+  function getTimeControl() {
+    return { minutes: 0, increment: 0 }
+  }
+
+  function formatTime(seconds) {
+    if (seconds <= 0) return "00:00"
+    const m = Math.floor(seconds / 60)
+    const s = Math.floor(seconds % 60)
+    return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
+  }
+
+  function updateClocks() {
+    $("#time-white").text(formatTime(clocks.white))
+    $("#time-black").text(formatTime(clocks.black))
+    const turn = game.turn() === "w" ? "white" : "black"
+    $("#clock-white").toggleClass("active", turn === "white" && gameStarted)
+    $("#clock-black").toggleClass("active", turn === "black" && gameStarted)
+    $("#clock-white").toggleClass("low", clocks.white < 30 && clocks.white > 0)
+    $("#clock-black").toggleClass("low", clocks.black < 30 && clocks.black > 0)
+  }
+
+  function startClock(serverTime) {
+        if (unlimited || !gameStarted) return
+        clearInterval(clockInterval)
+        const localOffset = serverTime ? (Date.now() - serverTime * 1000) : 0
+        moveStartTime = Date.now() - localOffset
+        clockInterval = setInterval(() => {
+            const turn = game.turn() === "w" ? "white" : "black"
+            const elapsed = (Date.now() - moveStartTime) / 1000
+            const displayClocks = {
+                white: turn === "white" ? Math.max(0, clocks.white - elapsed) : clocks.white,
+                black: turn === "black" ? Math.max(0, clocks.black - elapsed) : clocks.black
+            }
+            $("#time-white").text(formatTime(displayClocks.white))
+            $("#time-black").text(formatTime(displayClocks.black))
+            $("#clock-white").toggleClass("active", turn === "white" && gameStarted)
+            $("#clock-black").toggleClass("active", turn === "black" && gameStarted)
+            $("#clock-white").toggleClass("low", displayClocks.white < 30)
+            $("#clock-black").toggleClass("low", displayClocks.black < 30)
+            if (displayClocks[turn] <= 0 && turn === myColor) {
+                clearInterval(clockInterval)
+                socket.emit("timeout", { room: roomCode, color: myColor })
+            }
+        }, 100)
+  }
+
+  function stopClock() {
+    clearInterval(clockInterval)
+  }
+
+  function initBoard() {
+    if (board) board.destroy()
+    board = Chessboard("board", {
+      draggable: true,
+      position: "start",
+      orientation: myColor,
+      pieceTheme: "https://lichess1.org/assets/piece/cburnett/{piece}.svg",
+      onDragStart: (source, piece) => {
+        if (!gameStarted || game.game_over()) return false
+        if (myColor === "white" && piece.search(/^b/) !== -1) return false
+        if (myColor === "black" && piece.search(/^w/) !== -1) return false
+        if (game.turn() === "w" && myColor !== "white") return false
+        if (game.turn() === "b" && myColor !== "black") return false
+        highlightMoves(source)
+      },
+      onDrop: (source, target) => {
+      removeHighlights()
+      const move = game.move({ from: source, to: target, promotion: "q" })
+      if (move === null) return "snapback"
+      lastMove = source + target
+      socket.emit("make_move", { room: roomCode, move: lastMove })
+      updateStatus()
+    },
+      onSnapEnd: () => board.position(game.fen())
+    })
+  }
+
+  function showGame(code, color) {
+    roomCode = code
+    myColor = color
+    sessionStorage.setItem("roomCode", code)
+    sessionStorage.setItem("myColor", color)
+    $("#lobby").hide()
+    $("#game").css("display", "flex")
+    $("#room-code").text(code)
+    $("#my-color").text(color === "white" ? "白方" : "黑方")
+    $("#analysis-box").html("点击「教练分析」获取建议")
+    $("#last-move").text("上一步：—")
+    $("#clock-row").hide()
+    $("#time-white").text("--:--")
+    $("#time-black").text("--:--")
+    lastMove = ""
+    gameStarted = false
+    game.reset()
+    stopClock()
+    initBoard()
+  }
+
   function removeHighlights() {
-  $(".square-55d63").removeClass("highlight-square")
+    $(".square-55d63").removeClass("highlight-square")
   }
 
   function highlightMoves(square) {
-  removeHighlights()
-  var moves = game.moves({ square: square, verbose: true })
-  if (moves.length === 0) return
-  moves.forEach(function(move) {
-    $(".square-" + move.to).addClass("highlight-square")
-  })
-  }
-
-  var lastMove = ""
-
-  var board = Chessboard("board", {
-    draggable: true,
-    position: "start",
-    onDragStart: onDragStart,
-    onDrop: onDrop,
-    onSnapEnd: onSnapEnd,
-    pieceTheme: "https://lichess1.org/assets/piece/cburnett/{piece}.svg"
-  })
-
-  function onDragStart(source, piece) {
-    if (game.game_over()) return false
-    if ((game.turn() === "w" && piece.search(/^b/) !== -1) ||
-        (game.turn() === "b" && piece.search(/^w/) !== -1)) return false
-    highlightMoves(source)
-  }
-
-  function onDrop(source, target) {
     removeHighlights()
-    var move = game.move({ from: source, to: target, promotion: "q" })
-    if (move === null) return "snapback"
-    lastMove = source + target
-    $.post("/move", JSON.stringify({ move: lastMove }), function(data) {
-      if (data.success) {
-        updateStatus()
-      }
-    }, "json")
-  }
-
-  function onSnapEnd() {
-    board.position(game.fen())
+    game.moves({ square, verbose: true }).forEach(m => $(".square-" + m.to).addClass("highlight-square"))
   }
 
   function updateStatus() {
-    var turn = game.turn() === "w" ? "白方" : "黑方"
-    if (game.game_over()) {
-      $("#status").text("游戏结束！")
-    } else {
-      $("#status").text(turn + "行棋")
-    }
-    $("#last-move").text("上一步：" + lastMove)
+    if (game.game_over()) { $("#status").text("游戏结束！"); return }
+    const isMyTurn = (game.turn() === "w" && myColor === "white") ||
+                     (game.turn() === "b" && myColor === "black")
+    const turnText = game.turn() === "w" ? "白方" : "黑方"
+    $("#status").text(isMyTurn ? "轮到你走棋" : `等待${turnText}走棋`)
+    $("#last-move").text("上一步：" + (lastMove || "—"))
   }
 
-  $("#btn-analyze").click(function() {
-    $("#loading").show()
-    $("#analysis-box").text("")
-    $.post("/analyze", JSON.stringify({
-      fen: game.fen(),
-      last_move: lastMove,
-      turn: game.turn() === "w" ? "white" : "black"
-    }), function(data) {
-      $("#loading").hide()
-      $("#analysis-box").html(marked.parse(data.analysis || data.error))
-    }, "json")
+  // 单人模式
+$("#btn-solo").click(() => {
+    roomCode = "SOLO"
+    myColor = "white"
+    $("#lobby").hide()
+    $("#game").css("display", "flex")
+    $("#room-code").text("单人练习")
+    $("#my-color").text("白方先走")
+    $("#analysis-box").html("点击「教练分析」获取建议")
+    $("#last-move").text("上一步：—")
+    lastMove = ""
+    gameStarted = true
+    game.reset()
+    stopClock()
+    unlimited = true
+    // 单人模式允许双方都走
+    if (board) board.destroy()
+    board = Chessboard("board", {
+        draggable: true,
+        position: "start",
+        pieceTheme: "https://lichess1.org/assets/piece/cburnett/{piece}.svg",
+        onDragStart: (source, piece) => {
+            if (game.game_over()) return false
+            return true
+        },
+        onDrop: (source, target) => {
+            removeHighlights()
+            const move = game.move({ from: source, to: target, promotion: "q" })
+            if (move === null) return "snapback"
+            lastMove = source + target
+            const turn = game.turn() === "w" ? "白方" : "黑方"
+            $("#status").text(`轮到${turn}走棋`)
+            $("#last-move").text("上一步：" + lastMove)
+            // 单人模式交替颜色
+            myColor = game.turn() === "w" ? "white" : "black"
+            $("#my-color").text(myColor === "white" ? "白方先走" : "黑方先走")
+        },
+        onSnapEnd: () => board.position(game.fen())
+    })
+    $("#status").text("轮到白方走棋")
+})
+
+// FEN 分析
+$("#btn-fen-analyze").click(async () => {
+    const fen = $("#fen-input").val().trim()
+    if (!fen) { alert("请输入 FEN"); return }
+    try {
+        new Chess(fen)
+    } catch(e) {
+        alert("FEN 格式有误")
+        return
+    }
+    $("#fen-result").show().html("分析中...")
+    const response = await fetch("/analyze_fen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fen })
+    })
+    const data = await response.json()
+    $("#fen-result").html(marked.parse(data.analysis))
+})
+
+  $("#btn-create").click(() => {
+    $("#lobby-msg").text("创建中...")
+    socket.emit("create_room", { time_control: getTimeControl(), color: selectedColor })
   })
 
-  $("#btn-reset").click(function() {
-    $.post("/reset", function(data) {
-      game.reset()
-      board.start()
-      lastMove = ""
-      $("#status").text("白方行棋")
-      $("#last-move").text("上一步：—")
-      $("#analysis-box").text("点击「教练分析」获取建议")
-    }, "json")
+  $("#btn-join").click(() => {
+    const code = $("#room-input").val().trim().toUpperCase()
+    if (!code) { $("#lobby-msg").text("请输入房间码"); return }
+    socket.emit("join_room_code", { code })
+  })
+
+  $("#btn-quick").click(() => {
+    $("#lobby-msg").text("等待匹配...")
+    socket.emit("quick_match", { time_control: getTimeControl() })
+  })
+
+  $("#btn-home").click(() => {
+    gameStarted = false
+    stopClock()
+    $("#game").hide()
+    $("#lobby").css("display", "flex")
+    $("#lobby-msg").text("")
+  })
+
+  socket.on("room_created", data => {
+    $("#lobby-msg").text(`房间码：${data.code}，等待对手加入...`)
+    showGame(data.code, data.color)
+    $("#status").text("等待对手加入...")
+  })
+
+  socket.on("joined_room", data => {
+    showGame(data.code, data.color)
+  })
+
+  socket.on("matched", data => {
+    showGame(data.code, data.color)
+  })
+
+  socket.on("waiting", () => {
+    $("#lobby-msg").text("等待对手中...")
+  })
+
+  socket.on("game_start", data => {
+    gameStarted = true
+    unlimited = data.unlimited
+    increment = data.increment
+    clocks.white = data.white_time
+    clocks.black = data.black_time
+    game.load(data.fen)
+    board.position(game.fen())
+    if (!unlimited) {
+      $("#clock-row").show()
+      updateClocks()
+    }
+    updateStatus()
+    startClock()
+  })
+
+  socket.on("move_made", data => {
+        game.load(data.fen)
+        board.position(data.fen)
+        lastMove = data.move
+        clocks.white = data.white_time
+        clocks.black = data.black_time
+        updateStatus()
+        if (data.game_over) {
+            $("#status").text("游戏结束！")
+            stopClock()
+        } else {
+            startClock(data.server_time)
+        }
+  })
+
+  socket.on("timeout", data => {
+    stopClock()
+    gameStarted = false
+    const loser = data.loser === "white" ? "白方" : "黑方"
+    $("#status").text(`${loser}超时，游戏结束！`)
+  })
+
+  socket.on("opponent_left", () => {
+    $("#status").text("对手已离开")
+    gameStarted = false
+    stopClock()
+  })
+  socket.on("opponent_disconnected", data => {
+    $("#status").text(data.msg)
+})
+
+  socket.on("error", data => {
+    if (gameStarted) $("#status").text(data.msg)
+    else $("#lobby-msg").text(data.msg)
+  })
+
+  $("#btn-analyze").click(() => {
+    $("#loading").show()
+    $("#analysis-box").html("")
+    socket.emit("analyze", { room: roomCode })
+  })
+
+  socket.on("analysis", data => {
+    $("#loading").hide()
+    $("#analysis-box").html(marked.parse(data.text))
+  })
+
+  socket.on("reconnected", data => {
+      showGame(savedCode, savedColor)
+      gameStarted = true
+      unlimited = data.unlimited
+      clocks.white = data.white_time
+      clocks.black = data.black_time
+      game.load(data.fen)
+      board.position(data.fen)
+      if (!unlimited) {
+          $("#clock-row").show()
+          updateClocks()
+      }
+      updateStatus()
+      startClock()
+      sessionStorage.removeItem("roomCode")
+      sessionStorage.removeItem("myColor")
   })
 </script>
 </body>
