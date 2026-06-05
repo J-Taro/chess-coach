@@ -261,6 +261,29 @@
     clearInterval(clockInterval)
   }
 
+function readSSE(response, onChunk, onDone) {
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let tail = ""  // 上一个chunk未处理完的尾巴
+
+    async function pump() {
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) { onDone(); return }
+            tail += decoder.decode(value)
+            const lines = tail.split("\n")
+            tail = lines.pop()  // 最后一行可能不完整，留到下次
+            lines.forEach(line => {
+                if (line.startsWith("data: ")) {
+                    const chunk = line.slice(6)
+                    if (chunk !== "[DONE]") onChunk(chunk)
+                }
+            })
+        }
+    }
+    pump()
+}
+
   function initBoard() {
     if (board) board.destroy()
     board = Chessboard("board", {
@@ -374,20 +397,24 @@ $("#btn-solo").click(() => {
 $("#btn-fen-analyze").click(async () => {
     const fen = $("#fen-input").val().trim()
     if (!fen) { alert("请输入 FEN"); return }
-    try {
-        new Chess(fen)
-    } catch(e) {
-        alert("FEN 格式有误")
-        return
-    }
+    try { new Chess(fen) } catch(e) { alert("FEN 格式有误"); return }
     $("#fen-result").show().html("分析中...")
+
+    let buffer = ""
     const response = await fetch("/analyze_fen", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fen })
     })
-    const data = await response.json()
-    $("#fen-result").html(marked.parse(data.analysis))
+    readSSE(response,
+    chunk => {
+      const decoded = chunk.replace(/\|\|n\|\|/g, "\n")
+      buffer += decoded
+      const fixed = buffer.replace(/\n(\d+\.)/g, '\n\n$1')
+      $("#fen-result").html(marked.parse(fixed))
+},
+        () => {}
+    )
 })
 
   $("#btn-create").click(() => {
@@ -489,22 +516,41 @@ $("#btn-fen-analyze").click(async () => {
     $("#analysis-box").html("")
     
     if (roomCode === "SOLO") {
-        const response = await fetch("/analyze_fen", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ fen: game.fen() })
-        })
-        const data = await response.json()
-        $("#loading").hide()
-        $("#analysis-box").html(marked.parse(data.analysis))
-    } else {
+    let buffer = ""
+    const response = await fetch("/analyze_fen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fen: game.fen() })
+    })
+    $("#loading").hide()
+    readSSE(response,
+    chunk => {
+      const decoded = chunk.replace(/\|\|n\|\|/g, "\n")
+      buffer += decoded
+      console.log(JSON.stringify(buffer))
+      const fixed = buffer.replace(/\n(\d+\.)/g, '\n\n$1')
+      $("#analysis-box").html(marked.parse(fixed))
+},
+        () => {}
+    )
+} else {
         socket.emit("analyze", { room: roomCode })
     }
 })
 
-  socket.on("analysis", data => {
+  let analysisBuffer = ""
+
+  socket.on("analysis_chunk", data => {
     $("#loading").hide()
-    $("#analysis-box").html(marked.parse(data.text))
+    analysisBuffer += data.text
+    console.log(JSON.stringify(analysisBuffer))
+    // 把单个换行替换成两个，确保 marked 能识别分段
+    const fixed = analysisBuffer.replace(/\n(\d+\.)/g, '\n\n$1')
+    $("#analysis-box").html(marked.parse(fixed))
+})
+
+  socket.on("analysis_done", () => {
+      analysisBuffer = ""
   })
 
   socket.on("reconnected", data => {
