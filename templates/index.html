@@ -74,6 +74,43 @@
   .btn-orange:hover { background: #b85e25; }
   .btn-gray { background: #555; color: white; width: 100%; }
   .btn-gray:hover { background: #333; }
+  .btn-purple { background: #7b5ea7; color: white; width: 100%; }
+  .btn-purple:hover { background: #5e4080; }
+
+  /* 训练模式：教练按钮锁定状态 */
+  #btn-analyze:disabled {
+    background: #333; color: #666; cursor: not-allowed;
+  }
+
+  /* 难度选择 */
+  .difficulty-row { display: flex; gap: 6px; }
+  .diff-btn {
+    flex: 1; padding: 7px 4px; font-size: 12px; border: 1px solid #444;
+    border-radius: 8px; cursor: pointer; background: #0f3460; color: #eee;
+    font-weight: normal; text-align: center;
+  }
+  .diff-btn.active { background: #7b5ea7; border-color: #7b5ea7; }
+
+  /* 对局结束复盘提示 */
+  #review-hint {
+    background: #1e3a5f; border-radius: 10px; padding: 12px;
+    font-size: 13px; color: #a8d8a8; display: none; text-align: center;
+  }
+
+  /* 走法记录 */
+  #move-log {
+    background: #16213e; border-radius: 10px; padding: 10px;
+    font-size: 12px; color: #aaa; max-height: 120px; overflow-y: auto;
+    font-family: monospace; line-height: 1.8; display: none;
+  }
+  .move-step {
+    cursor: pointer; padding: 1px 4px; border-radius: 4px;
+  }
+  .move-step:hover { background: #2a3f6f; color: #fff; }
+  .move-step.active { background: #4a90d9; color: #fff; }
+  #replay-hint {
+    font-size: 11px; color: #666; text-align: center; display: none;
+  }
 </style>
 </head>
 <body>
@@ -82,33 +119,35 @@
   <h1>♟️ Chess Coach</h1>
   <p class="subtitle">国际象棋 AI 教练</p>
 
-  <div class="card" style="display:none">
-    <h2>时间控制</h2>
-    <div class="time-presets">
-        <button class="preset-btn active" data-min="0" data-inc="0">无限制</button>
-        <button class="preset-btn" data-min="1" data-inc="0">子弹 · 1分钟</button>
-        <button class="preset-btn" data-min="2" data-inc="0">子弹 · 2分钟</button>
-        <button class="preset-btn" data-min="3" data-inc="2">闪电 · 3分钟+2秒/步</button>
-        <button class="preset-btn" data-min="5" data-inc="0">闪电 · 5分钟</button>
-        <button class="preset-btn" data-min="10" data-inc="0">快棋 · 10分钟</button>
-        <button class="preset-btn" data-min="15" data-inc="10">快棋 · 15分钟+10秒/步</button>
-        <button class="preset-btn" data-min="30" data-inc="0">慢棋 · 30分钟</button>
-        <button class="preset-btn" data-min="-1" data-inc="-1">自定义</button>
+  <div style="display:flex;gap:16px;width:100%;max-width:760px">
+    <!-- 对战 Stockfish（训练模式） -->
+    <div class="card" style="flex:1">
+      <h2>🤖 训练模式 · 对战引擎</h2>
+      <p style="font-size:12px;color:#aaa;margin:0">对局中教练不介入，结束后复盘分析</p>
+      <div style="font-size:12px;color:#aaa;margin-top:4px">难度</div>
+      <div class="difficulty-row">
+        <div class="diff-btn active" data-depth="3">入门</div>
+        <div class="diff-btn" data-depth="6">初级</div>
+        <div class="diff-btn" data-depth="10">中级</div>
+        <div class="diff-btn" data-depth="15">高级</div>
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-top:4px">执棋颜色</div>
+      <div style="display:flex;gap:8px">
+        <button class="preset-btn active" id="sf-color-white" style="flex:1">♔ 白方</button>
+        <button class="preset-btn" id="sf-color-black" style="flex:1">♚ 黑方</button>
+      </div>
+      <button class="btn-purple" id="btn-vs-stockfish">开始训练</button>
     </div>
-    <div class="custom-time" id="custom-row" style="display:none">
-      <span>时间</span>
-      <input type="number" id="custom-min" min="1" max="180" value="10" placeholder="分钟">
-      <span>分钟 +</span>
-      <input type="number" id="custom-inc" min="0" max="60" value="0" placeholder="秒">
-      <span>秒/步</span>
+
+    <!-- 单人模式 -->
+    <div class="card" style="flex:1">
+      <h2>✏️ 学习模式 · 自由练习</h2>
+      <p style="font-size:12px;color:#aaa;margin:0">自己操控双方，随时可以问教练</p>
+      <button class="btn-blue" id="btn-solo" style="margin-top:auto">Solo Mode</button>
     </div>
   </div>
 
   <div style="display:flex;gap:16px;width:100%;max-width:760px">
-    <div class="card" style="flex:1">
-      <h2>单人模式</h2>
-      <button class="btn-blue" id="btn-solo">Solo Mode</button>
-    </div>
     <div class="card" style="flex:1">
       <h2>FEN 局面分析</h2>
       <input type="text" id="fen-input" placeholder="粘贴 FEN 字符串">
@@ -160,6 +199,16 @@
       </div>
     </div>
     <div id="last-move">上一步：—</div>
+
+    <!-- 走法记录（训练模式显示） -->
+    <div id="move-log"></div>
+    <div id="replay-hint">点击任意走法跳转局面 · 点空白处恢复当前</div>
+
+    <!-- 训练模式：对局结束提示 -->
+    <div id="review-hint">
+      🎓 对局结束！现在可以让教练复盘整局分析
+    </div>
+
     <button class="btn-blue" id="btn-analyze">🎓 教练分析</button>
     <div id="loading">教练思考中...</div>
     <div id="analysis-box">点击「教练分析」获取建议</div>
@@ -191,13 +240,35 @@
   let clockInterval = null
   let moveStartTime = null
 
-  // 时制预设
+  // 训练模式状态
+  let isTrainingMode = false
+  let stockfishDepth = 3
+  let stockfishThinking = false
+  let moveHistory = []  // 存每步 {uci, fen, score} 用于复盘
+
+  // 难度按钮
+  $(".diff-btn").click(function() {
+    $(".diff-btn").removeClass("active")
+    $(this).addClass("active")
+    stockfishDepth = parseInt($(this).data("depth"))
+  })
+
+  // 执棋颜色选择（Stockfish 对战）
+  let sfPlayerColor = "white"
+  $("#sf-color-white, #sf-color-black").click(function() {
+    $("#sf-color-white, #sf-color-black").removeClass("active")
+    $(this).addClass("active")
+    sfPlayerColor = $(this).attr("id") === "sf-color-white" ? "white" : "black"
+  })
+
+  // 颜色选择（房间）
   let selectedColor = "random"
   $("#color-random, #color-white, #color-black").click(function() {
     $("#color-random, #color-white, #color-black").removeClass("active")
     $(this).addClass("active")
     selectedColor = $(this).attr("id").replace("color-", "")
   })
+
   let selectedMin = 0, selectedInc = 0
   $(".time-presets .preset-btn").click(function() {
     $(".time-presets .preset-btn").removeClass("active")
@@ -264,7 +335,7 @@
 function readSSE(response, onChunk, onDone) {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
-    let tail = ""  // 上一个chunk未处理完的尾巴
+    let tail = ""
 
     async function pump() {
         while (true) {
@@ -272,7 +343,7 @@ function readSSE(response, onChunk, onDone) {
             if (done) { onDone(); return }
             tail += decoder.decode(value)
             const lines = tail.split("\n")
-            tail = lines.pop()  // 最后一行可能不完整，留到下次
+            tail = lines.pop()
             lines.forEach(line => {
                 if (line.startsWith("data: ")) {
                     const chunk = line.slice(6)
@@ -297,21 +368,176 @@ function readSSE(response, onChunk, onDone) {
         if (myColor === "black" && piece.search(/^w/) !== -1) return false
         if (game.turn() === "w" && myColor !== "white") return false
         if (game.turn() === "b" && myColor !== "black") return false
+        if (stockfishThinking) return false  // Stockfish 走棋时不能操作
         highlightMoves(source)
       },
       onDrop: (source, target) => {
-      removeHighlights()
-      const move = game.move({ from: source, to: target, promotion: "q" })
-      if (move === null) return "snapback"
-      lastMove = source + target
-      socket.emit("make_move", { room: roomCode, move: lastMove })
-      updateStatus()
-    },
+        removeHighlights()
+        const move = game.move({ from: source, to: target, promotion: "q" })
+        if (move === null) return "snapback"
+        lastMove = source + target
+        if (roomCode === "STOCKFISH") {
+          updateMoveLog(lastMove)
+          updateStatus()
+          if (!game.game_over()) {
+            doStockfishMove()
+          } else {
+            onGameOver()
+          }
+        } else {
+          socket.emit("make_move", { room: roomCode, move: lastMove })
+          updateStatus()
+        }
+      },
       onSnapEnd: () => board.position(game.fen())
     })
   }
 
+  // Stockfish 走棋
+  async function doStockfishMove() {
+    if (game.game_over()) { onGameOver(); return }
+    stockfishThinking = true
+    $("#status").text("引擎思考中...")
+
+    try {
+      const res = await fetch("/stockfish_move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fen: game.fen(), depth: stockfishDepth })
+      })
+      const data = await res.json()
+      if (data.move) {
+        const move = game.move({ from: data.move.slice(0,2), to: data.move.slice(2,4), promotion: data.move[4] || "q" })
+        if (move) {
+          lastMove = data.move
+          board.position(game.fen())
+          updateMoveLog(lastMove, data.score)
+          updateStatus()
+          if (game.game_over()) {
+            onGameOver()
+          }
+        }
+      }
+    } catch(e) {
+      console.error("Stockfish error:", e)
+    }
+    stockfishThinking = false
+  }
+
+  function updateMoveLog(uci, score) {
+    moveHistory.push({ uci, fen: game.fen(), score: score || "" })
+
+    renderMoveLog()
+  }
+
+  function renderMoveLog(activeIdx) {
+    let logHtml = ""
+    for (let i = 0; i < moveHistory.length; i++) {
+      const m = moveHistory[i]
+      const num = Math.floor(i / 2) + 1
+      const isWhiteMove = i % 2 === 0
+      const label = isWhiteMove ? `${num}. ${m.uci}` : m.uci
+      const isActive = i === activeIdx
+      logHtml += `<span class="move-step${isActive ? ' active' : ''}" data-idx="${i}">${label}</span> `
+    }
+    $("#move-log").html(logHtml).scrollTop(9999)
+    $("#replay-hint").toggle(moveHistory.length > 0)
+  }
+
+  // 点击走法跳转局面
+  $(document).on("click", ".move-step", function(e) {
+    e.stopPropagation()
+    const idx = parseInt($(this).data("idx"))
+    const entry = moveHistory[idx]
+    if (!entry) return
+    board.position(entry.fen, false)
+    renderMoveLog(idx)
+    const moveNum = Math.floor(idx / 2) + 1
+    const side = idx % 2 === 0 ? "白方" : "黑方"
+    $("#last-move").text(`第 ${moveNum} 步 · ${side} · ${entry.uci}`)
+  })
+
+  // 点击棋盘空白恢复当前局面
+  $("#board").on("click", function() {
+    if (moveHistory.length === 0) return
+    board.position(game.fen(), false)
+    renderMoveLog()
+    $("#last-move").text("上一步：" + (lastMove || "—"))
+  })
+
+  function onGameOver() {
+    gameStarted = false
+    const result = game.in_checkmate() ? "将死！" : game.in_draw() ? "平局" : "游戏结束"
+    $("#status").text(result)
+    if (isTrainingMode) {
+      // 解锁教练按钮，显示复盘提示
+      $("#btn-analyze").prop("disabled", false).text("🎓 复盘分析")
+      $("#review-hint").show()
+      $("#analysis-box").html("对局结束，点击上方按钮让教练复盘整局")
+    }
+  }
+
+  // Stockfish 对战入口
+  $("#btn-vs-stockfish").click(() => {
+    isTrainingMode = true
+    roomCode = "STOCKFISH"
+    myColor = sfPlayerColor
+    moveHistory = []
+    stockfishThinking = false
+
+    $("#lobby").hide()
+    $("#game").css("display", "flex")
+    $("#room-code").text("引擎对战")
+    $("#my-color").text(myColor === "white" ? "白方" : "黑方")
+    $("#analysis-box").html("对局进行中，教练不介入。<br>对局结束后可以复盘。")
+    $("#last-move").text("上一步：—")
+    $("#clock-row").hide()
+    $("#move-log").show()
+    $("#review-hint").hide()
+    lastMove = ""
+    gameStarted = true
+    game.reset()
+
+    // 训练模式锁住教练按钮
+    $("#btn-analyze").prop("disabled", true).text("🔒 对局结束后复盘")
+
+    if (board) board.destroy()
+    board = Chessboard("board", {
+      draggable: true,
+      position: "start",
+      orientation: myColor,
+      pieceTheme: "https://lichess1.org/assets/piece/cburnett/{piece}.svg",
+      onDragStart: (source, piece) => {
+        if (!gameStarted || game.game_over() || stockfishThinking) return false
+        if (myColor === "white" && piece.search(/^b/) !== -1) return false
+        if (myColor === "black" && piece.search(/^w/) !== -1) return false
+        if (game.turn() === "w" && myColor !== "white") return false
+        if (game.turn() === "b" && myColor !== "black") return false
+        highlightMoves(source)
+      },
+      onDrop: (source, target) => {
+        removeHighlights()
+        const move = game.move({ from: source, to: target, promotion: "q" })
+        if (move === null) return "snapback"
+        lastMove = source + target
+        updateMoveLog(lastMove)
+        updateStatus()
+        if (game.game_over()) { onGameOver(); return }
+        setTimeout(() => doStockfishMove(), 300)  // 小延迟让棋子动画完成
+      },
+      onSnapEnd: () => board.position(game.fen())
+    })
+
+    updateStatus()
+
+    // 如果玩家选黑，Stockfish 先走
+    if (myColor === "black") {
+      setTimeout(() => doStockfishMove(), 500)
+    }
+  })
+
   function showGame(code, color) {
+    isTrainingMode = false
     roomCode = code
     myColor = color
     sessionStorage.setItem("roomCode", code)
@@ -325,6 +551,9 @@ function readSSE(response, onChunk, onDone) {
     $("#clock-row").hide()
     $("#time-white").text("--:--")
     $("#time-black").text("--:--")
+    $("#move-log").hide()
+    $("#review-hint").hide()
+    $("#btn-analyze").prop("disabled", false).text("🎓 教练分析")
     lastMove = ""
     gameStarted = false
     game.reset()
@@ -342,16 +571,22 @@ function readSSE(response, onChunk, onDone) {
   }
 
   function updateStatus() {
-    if (game.game_over()) { $("#status").text("游戏结束！"); return }
-    const isMyTurn = (game.turn() === "w" && myColor === "white") ||
-                     (game.turn() === "b" && myColor === "black")
-    const turnText = game.turn() === "w" ? "白方" : "黑方"
-    $("#status").text(isMyTurn ? "轮到你走棋" : `等待${turnText}走棋`)
+    if (game.game_over()) { return }
+    if (roomCode === "STOCKFISH") {
+      const isMyTurn = (game.turn() === "w") === (myColor === "white")
+      $("#status").text(isMyTurn ? "轮到你走棋" : "引擎思考中...")
+    } else {
+      const isMyTurn = (game.turn() === "w" && myColor === "white") ||
+                       (game.turn() === "b" && myColor === "black")
+      const turnText = game.turn() === "w" ? "白方" : "黑方"
+      $("#status").text(isMyTurn ? "轮到你走棋" : `等待${turnText}走棋`)
+    }
     $("#last-move").text("上一步：" + (lastMove || "—"))
   }
 
   // 单人模式
 $("#btn-solo").click(() => {
+    isTrainingMode = false
     roomCode = "SOLO"
     myColor = "white"
     $("#lobby").hide()
@@ -360,12 +595,14 @@ $("#btn-solo").click(() => {
     $("#my-color").text("白方先走")
     $("#analysis-box").html("点击「教练分析」获取建议")
     $("#last-move").text("上一步：—")
+    $("#move-log").hide()
+    $("#review-hint").hide()
+    $("#btn-analyze").prop("disabled", false).text("🎓 教练分析")
     lastMove = ""
     gameStarted = true
     game.reset()
     stopClock()
     unlimited = true
-    // 单人模式允许双方都走
     if (board) board.destroy()
     board = Chessboard("board", {
         draggable: true,
@@ -384,7 +621,6 @@ $("#btn-solo").click(() => {
             const turn = game.turn() === "w" ? "白方" : "黑方"
             $("#status").text(`轮到${turn}走棋`)
             $("#last-move").text("上一步：" + lastMove)
-            // 单人模式交替颜色
             myColor = game.turn() === "w" ? "white" : "black"
             $("#my-color").text(myColor === "white" ? "白方先走" : "黑方先走")
         },
@@ -412,8 +648,8 @@ $("#btn-fen-analyze").click(async () => {
       buffer += decoded
       const fixed = buffer.replace(/\n(\d+\.)/g, '\n\n$1')
       $("#fen-result").html(marked.parse(fixed))
-},
-        () => {}
+    },
+    () => {}
     )
 })
 
@@ -434,7 +670,9 @@ $("#btn-fen-analyze").click(async () => {
   })
 
   $("#btn-home").click(() => {
+    isTrainingMode = false
     gameStarted = false
+    stockfishThinking = false
     stopClock()
     $("#game").hide()
     $("#lobby").css("display", "flex")
@@ -511,40 +749,53 @@ $("#btn-fen-analyze").click(async () => {
     else $("#lobby-msg").text(data.msg)
   })
 
+  // 教练分析按钮
+  // 训练模式：复盘整局
+  // 学习/单人模式：实时分析当前局面
   $("#btn-analyze").click(async () => {
+    if ($("#btn-analyze").prop("disabled")) return
+
     $("#loading").show()
     $("#analysis-box").html("")
-    
-    if (roomCode === "SOLO") {
-    let buffer = ""
-    const response = await fetch("/analyze_fen", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fen: game.fen() })
-    })
-    $("#loading").hide()
-    readSSE(response,
-    chunk => {
-      const decoded = chunk.replace(/\|\|n\|\|/g, "\n")
-      buffer += decoded
-      console.log(JSON.stringify(buffer))
-      const fixed = buffer.replace(/\n(\d+\.)/g, '\n\n$1')
-      $("#analysis-box").html(marked.parse(fixed))
-},
+    $("#review-hint").hide()
+
+    // 训练模式复盘：把整局走法历史也传过去
+    const fenToAnalyze = game.fen()
+    const historyForReview = isTrainingMode
+      ? moveHistory.map(m => m.uci).join(" → ")
+      : null
+
+    if (roomCode === "SOLO" || roomCode === "STOCKFISH") {
+      let buffer = ""
+      const response = await fetch("/analyze_fen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fen: fenToAnalyze,
+            history: historyForReview,
+            is_review: isTrainingMode
+          })
+      })
+      $("#loading").hide()
+      readSSE(response,
+        chunk => {
+          const decoded = chunk.replace(/\|\|n\|\|/g, "\n")
+          buffer += decoded
+          const fixed = buffer.replace(/\n(\d+\.)/g, '\n\n$1')
+          $("#analysis-box").html(marked.parse(fixed))
+        },
         () => {}
-    )
-} else {
-        socket.emit("analyze", { room: roomCode })
+      )
+    } else {
+      socket.emit("analyze", { room: roomCode })
     }
-})
+  })
 
   let analysisBuffer = ""
 
   socket.on("analysis_chunk", data => {
     $("#loading").hide()
     analysisBuffer += data.text
-    console.log(JSON.stringify(analysisBuffer))
-    // 把单个换行替换成两个，确保 marked 能识别分段
     const fixed = analysisBuffer.replace(/\n(\d+\.)/g, '\n\n$1')
     $("#analysis-box").html(marked.parse(fixed))
 })

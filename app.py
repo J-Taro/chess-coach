@@ -76,14 +76,16 @@ def index():
 def analyze_fen():
     data = request.get_json(force=True)
     fen = data.get("fen", "")
+    history = data.get("history", "")      # 新增：走法历史
+    is_review = data.get("is_review", False)  # 新增：是否复盘模式
+ 
     try:
         board = chess.Board(fen)
     except Exception:
         return jsonify({"error": "FEN 格式有误"})
-
+ 
     turn = "白方" if board.turn == chess.WHITE else "黑方"
-
-    # Stockfish 评估
+ 
     try:
         with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
             result = engine.analyse(board, chess.engine.Limit(time=0.5))
@@ -103,20 +105,43 @@ def analyze_fen():
     except Exception:
         best_move_uci = "无"
         score_str = "评估失败"
-
-    prompt = f"""当前棋局 FEN：{fen}
+ 
+    # 根据模式构建不同 prompt
+    if is_review and history:
+        prompt = f"""这是一局刚结束的对局，请帮玩家复盘。
+ 
+完整走法历史（UCI格式）：{history}
+最终局面 FEN：{fen}
+Stockfish 评估：{score_str}
+ 
+请按以下格式复盘：
+ 
+1. 整局总体评价
+[简短评价这局棋的整体走势]
+ 
+2. 最关键的失误
+[指出最影响结果的1-2步错误，说明为什么错]
+ 
+3. 做得好的地方
+[指出1-2步走得不错的地方]
+ 
+4. 下次重点注意
+[给出一个具体的改进建议]"""
+    else:
+        prompt = f"""当前棋局 FEN：{fen}
 现在轮到：{turn}行棋
-
+{"完整走法历史：" + history if history else ""}
+ 
 Stockfish引擎评估：
 - 当前局面：{score_str}
 - 引擎推荐走法：{best_move_uci}
-
+ 
 请分析这个局面，在建议下一步时必须包含引擎推荐的走法 {best_move_uci} 并用人话解释为什么这步好。"""
-
+ 
     def generate():
         response = client.chat.completions.create(
             model=CURRENT_MODEL,
-            max_tokens=400,
+            max_tokens=500,  # 复盘需要更多 token
             stream=True,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -126,12 +151,47 @@ Stockfish引擎评估：
         for chunk in response:
             delta = chunk.choices[0].delta.content
             if delta:
-                # 把换行符替换成占位符再传，前端还原
                 escaped = delta.replace("\n", "||n||")
                 yield f"data: {escaped}\n\n"
         yield "data: [DONE]\n\n"
-
+ 
     return app.response_class(generate(), mimetype="text/event-stream")
+ 
+ 
+@app.route("/stockfish_move", methods=["POST"])
+def stockfish_move():
+    """接收 FEN，返回 Stockfish 的走法（供人机对战用）"""
+    data = request.get_json(force=True)
+    fen = data.get("fen", "")
+    depth = data.get("depth", 8)
+ 
+    try:
+        board = chess.Board(fen)
+    except Exception:
+        return jsonify({"error": "FEN 格式有误"})
+ 
+    if board.is_game_over():
+        return jsonify({"move": None, "game_over": True})
+ 
+    try:
+        with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
+            result = engine.play(board, chess.engine.Limit(depth=depth))
+            move_uci = result.move.uci()
+            analysis = engine.analyse(board, chess.engine.Limit(depth=depth))
+            score = analysis["score"].white()
+            if score.is_mate():
+                score_str = f"将死还需 {abs(score.mate())} 步"
+            else:
+                cp = score.score()
+                score_str = f"{cp/100:+.1f}"
+ 
+        return jsonify({
+            "move": move_uci,
+            "score": score_str,
+            "game_over": False
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
 @socketio.on("create_room")
